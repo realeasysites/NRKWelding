@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>NRK Leads</title>
+<style>
+  :root{--bg:#0d0d0f;--panel:#1a1b1f;--line:#2c2f35;--gold:#f5b50a;--mute:#a8adb5}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:#fff;font-family:Inter,Arial,sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header img{width:44px;height:44px}
+  header h1{font-size:18px;margin:0;flex:1}
+  .btn{background:var(--panel);color:#fff;border:1px solid var(--line);padding:9px 14px;border-radius:8px;cursor:pointer;font-size:14px;text-decoration:none}
+  .btn.gold{background:var(--gold);color:#111;border-color:var(--gold);font-weight:700}
+  .tabs{display:flex;gap:8px;padding:14px 18px;flex-wrap:wrap}
+  .tab{padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:#fff;cursor:pointer;font-size:14px}
+  .tab.on{background:var(--gold);color:#111;border-color:var(--gold);font-weight:700}
+  .tab b{opacity:.75;margin-left:6px}
+  main{padding:0 18px 40px}
+  .lead{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
+  .top{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;align-items:flex-start}
+  .name{font-size:18px;font-weight:700}
+  .meta{color:var(--mute);font-size:13px;margin-top:2px}
+  .contact a{color:var(--gold);text-decoration:none;margin-right:14px}
+  .msg{margin:10px 0;white-space:pre-wrap;line-height:1.5}
+  select,textarea{background:var(--bg);color:#fff;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:14px}
+  textarea{width:100%;min-height:60px;margin-top:8px}
+  .empty{color:var(--mute);padding:30px;text-align:center}
+  .pill{display:inline-block;padding:2px 10px;border-radius:999px;background:#2c2f35;font-size:12px;margin-left:6px}
+</style>
+</head>
+<body>
+<header>
+  <img src="/images/logo-small.png" alt="">
+  <h1>NRK Welding: Quote Leads</h1>
+  <a class="btn" href="/admin/api/export.csv">Export CSV</a>
+  <button class="btn" id="out">Sign out</button>
+</header>
+<div class="tabs" id="tabs"></div>
+<main id="list"></main>
+<script>
+let current = '';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  if (r.status === 401) { location.href = '/admin/login'; throw new Error('401'); }
+  return r.json();
+}
+
+async function load() {
+  const d = await api('/admin/api/leads' + (current ? '?status=' + current : ''));
+  const total = Object.entries(d.counts).filter(([k]) => k !== 'archived').reduce((a, [, v]) => a + v, 0);
+  document.getElementById('tabs').innerHTML =
+    `<button class="tab ${current === '' ? 'on' : ''}" data-s="">Active<b>${total}</b></button>` +
+    d.statuses.map(s => `<button class="tab ${current === s ? 'on' : ''}" data-s="${s}">${s[0].toUpperCase() + s.slice(1)}<b>${d.counts[s] || 0}</b></button>`).join('');
+  document.querySelectorAll('.tab').forEach(t => t.onclick = () => { current = t.dataset.s; load(); });
+
+  const list = document.getElementById('list');
+  if (!d.leads.length) { list.innerHTML = '<div class="empty">No leads here yet.</div>'; return; }
+  list.innerHTML = d.leads.map(l => `
+    <div class="lead" data-id="${l.id}">
+      <div class="top">
+        <div>
+          <div class="name">${esc(l.name)}<span class="pill">${esc(l.status)}</span></div>
+          <div class="meta">${esc(l.created_at)} UTC${l.service ? ' · ' + esc(l.service) : ''}${l.town ? ' · ' + esc(l.town) : ''}</div>
+        </div>
+        <select class="st">${d.statuses.map(s => `<option ${s === l.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
+      </div>
+      <div class="contact" style="margin-top:8px">
+        <a href="tel:${esc(l.phone)}">${esc(l.phone)}</a>
+        ${l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : ''}
+      </div>
+      ${l.message ? `<div class="msg">${esc(l.message)}</div>` : ''}
+      <textarea class="nt" placeholder="Notes (saves when you click away)">${esc(l.notes)}</textarea>
+    </div>`).join('');
+
+  document.querySelectorAll('.lead').forEach(el => {
+    const id = el.dataset.id;
+    el.querySelector('.st').onchange = async e => {
+      await api('/admin/api/leads/' + id, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({status: e.target.value})});
+      load();
+    };
+    el.querySelector('.nt').onblur = e =>
+      api('/admin/api/leads/' + id, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({notes: e.target.value})});
+  });
+}
+
+document.getElementById('out').onclick = async () => {
+  await fetch('/admin/logout', {method: 'POST'});
+  location.href = '/admin/login';
+};
+load();
+</script>
+</body>
+</html>
