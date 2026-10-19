@@ -72,6 +72,13 @@ router.patch('/api/leads/:id', auth.requireAdminApi, (req, res) => {
   res.json({ ok: true });
 });
 
+// Delete a request that isn't a real lead (spam, test, wrong number).
+router.delete('/api/leads/:id', auth.requireAdminApi, (req, res) => {
+  const r = db.prepare('DELETE FROM leads WHERE id = ?').run(Number(req.params.id));
+  if (!r.changes) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
+});
+
 router.get('/api/export.csv', auth.requireAdminApi, (req, res) => {
   const rows = db.prepare('SELECT * FROM leads ORDER BY id DESC').all();
   const cols = ['id', 'created_at', 'name', 'phone', 'email', 'service', 'town', 'message', 'status', 'notes', 'source'];
